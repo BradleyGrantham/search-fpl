@@ -11,14 +11,15 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from dotenv import load_dotenv
+
+load_dotenv()  # before importing app modules, which read settings from the environment
+
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
 
 from app import limits, nl_search
 from app.ingest import DB_PATH, ingest, normalise
-
-load_dotenv()
 
 ROOT = Path(__file__).parent.parent
 STATIC_DIR = ROOT / "static"
