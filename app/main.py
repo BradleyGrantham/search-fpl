@@ -32,6 +32,8 @@ MAX_QUERY_CHARS = 200
 REFRESH_HOURS = float(os.getenv("REFRESH_HOURS", "6"))
 # Serve under a path such as /fpl (the Cloudflare Tunnel passes the prefix through unchanged).
 URL_PREFIX = os.getenv("URL_PREFIX", "").rstrip("/")
+# The generated SQL is always logged; it's only sent to the page when debugging.
+SHOW_SQL = os.getenv("SHOW_SQL", "").lower() in ("1", "true", "yes")
 
 log = logging.getLogger("uvicorn.error")
 _players: list[dict] = []
@@ -138,6 +140,8 @@ async def ask(q: str, request: Request):
         f.write(json.dumps(entry) + "\n")
     log.info("ask %r -> %d players, model %dms, total %dms",
              q, len(result["ids"]), result["model_ms"], result["total_ms"])
+    if not SHOW_SQL:
+        result.pop("sql")
     return {"query": q, **result}
 
 
