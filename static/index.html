@@ -181,7 +181,7 @@
     <label for="q" class="sr-only">Search players</label>
     <input id="q" type="text" placeholder="Search players, or ask a question"
            autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
-           enterkeyhint="search" autofocus>
+           enterkeyhint="search" maxlength="120" autofocus>
     <button id="clear" type="button" aria-label="Clear search" hidden>
       <kbd>esc</kbd>
       <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"/></svg>
@@ -499,8 +499,9 @@ async function init() {
   syncChrome();
   // ?q=haaland runs a name search, ?ask=cheap+defenders goes straight to the AI.
   const params = new URLSearchParams(location.search);
-  if (params.get("ask")) { input.value = params.get("ask"); syncChrome(); setTimeout(runAsk, 600); }
-  else if (params.get("q")) { input.value = params.get("q"); syncChrome(); setTimeout(runNameSearch, 600); }
+  const fromUrl = key => (params.get(key) || "").slice(0, input.maxLength);
+  if (fromUrl("ask")) { input.value = fromUrl("ask"); syncChrome(); setTimeout(runAsk, 600); }
+  else if (fromUrl("q")) { input.value = fromUrl("q"); syncChrome(); setTimeout(runNameSearch, 600); }
 }
 
 let resizeTimer;

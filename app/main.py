@@ -28,7 +28,7 @@ PUBLIC_COLUMNS = [
     "id", "code", "web_name", "first_name", "second_name", "team", "team_code",
     "position", "price", "total_points",
 ]
-MAX_QUERY_CHARS = 200
+MAX_QUERY_CHARS = 120  # keep in sync with maxlength on the search input
 REFRESH_HOURS = float(os.getenv("REFRESH_HOURS", "6"))
 # Serve under a path such as /fpl (the Cloudflare Tunnel passes the prefix through unchanged).
 URL_PREFIX = os.getenv("URL_PREFIX", "").rstrip("/")
