@@ -114,8 +114,9 @@ async def ask(q: str, request: Request):
     q = q.strip()
     if not q or len(q) > MAX_QUERY_CHARS:
         raise HTTPException(status_code=400, detail=f"Keep questions under {MAX_QUERY_CHARS} characters.")
-    # Behind the reverse proxy, uvicorn's --proxy-headers makes this the visitor's IP.
-    client = request.client.host if request.client else "unknown"
+    # In production the app listens on 127.0.0.1 behind a Cloudflare Tunnel, so only
+    # cloudflared can connect and its CF-Connecting-IP header is the visitor's real IP.
+    client = request.headers.get("cf-connecting-ip") or (request.client.host if request.client else "unknown")
     refusal = limits.check(client)
     if refusal:
         raise HTTPException(status_code=429, detail=refusal)
