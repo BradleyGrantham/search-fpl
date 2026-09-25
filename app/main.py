@@ -16,7 +16,7 @@ load_dotenv()  # before importing app modules, which read settings from the envi
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 
 from app import limits, nl_search
 from app.ingest import DB_PATH, ingest, normalise
@@ -30,6 +30,8 @@ PUBLIC_COLUMNS = [
 ]
 MAX_QUERY_CHARS = 200
 REFRESH_HOURS = float(os.getenv("REFRESH_HOURS", "6"))
+# Serve under a path such as /fpl (the Cloudflare Tunnel passes the prefix through unchanged).
+URL_PREFIX = os.getenv("URL_PREFIX", "").rstrip("/")
 
 log = logging.getLogger("uvicorn.error")
 _players: list[dict] = []
@@ -75,7 +77,7 @@ async def lifespan(_: FastAPI):
 
 
 # No /docs or /openapi.json on the public site.
-app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+api = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 
 
 def search_players(query: str) -> list[int]:
@@ -90,27 +92,27 @@ def search_players(query: str) -> list[int]:
     return [p["id"] for p in hits]
 
 
-@app.get("/")
+@api.get("/")
 def index():
     return FileResponse(STATIC_DIR / "index.html")
 
 
-@app.get("/health")
+@api.get("/health")
 def health():
     return {"ok": True, "players": len(_players)}
 
 
-@app.get("/api/players")
+@api.get("/api/players")
 def players():
     return [{k: p[k] for k in PUBLIC_COLUMNS} for p in _players]
 
 
-@app.get("/api/search")
+@api.get("/api/search")
 def search(q: str = ""):
     return {"query": q, "ids": search_players(q[:MAX_QUERY_CHARS])}
 
 
-@app.get("/api/ask")
+@api.get("/api/ask")
 async def ask(q: str, request: Request):
     q = q.strip()
     if not q or len(q) > MAX_QUERY_CHARS:
@@ -137,3 +139,18 @@ async def ask(q: str, request: Request):
     log.info("ask %r -> %d players, model %dms, total %dms",
              q, len(result["ids"]), result["model_ms"], result["total_ms"])
     return {"query": q, **result}
+
+
+if URL_PREFIX:
+    # Mounted apps don't run their own startup, so the outer app runs it for them.
+    app = FastAPI(lifespan=api.router.lifespan_context, docs_url=None, redoc_url=None, openapi_url=None)
+
+    @app.get(URL_PREFIX, include_in_schema=False)
+    def add_trailing_slash():
+        # Relative Location: behind the tunnel the app sees plain http, so an absolute
+        # redirect would send visitors from https to http.
+        return RedirectResponse(URL_PREFIX + "/", status_code=308)
+
+    app.mount(URL_PREFIX, api)
+else:
+    app = api
