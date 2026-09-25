@@ -1,0 +1,521 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0e0e10">
+<title>FPL Search</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Albert+Sans:wght@400;500&family=DM+Mono&display=swap" rel="stylesheet">
+<style>
+  /* Quiet, neutral chrome: the kits are the only colour on the page. */
+  :root {
+    --bg: #0e0e10;
+    --surface: #18181b;
+    --hairline: rgba(255, 255, 255, .08);
+    --hairline-strong: rgba(255, 255, 255, .2);
+    --text: #f2f2f3;
+    --muted: #8b8b92;
+    --faint: #5c5c63;
+    --error: #e5484d;
+
+    --sans: "Albert Sans", ui-sans-serif, system-ui, -apple-system, sans-serif;
+    --mono: "DM Mono", ui-monospace, Menlo, monospace;
+    --radius: 14px;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { margin: 0; height: 100%; overflow: hidden; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 400 14px/1.4 var(--sans);
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+  }
+  :focus-visible { outline: 2px solid var(--hairline-strong); outline-offset: 2px; }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+  header {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 10000;
+    display: flex; flex-direction: column; align-items: center;
+    padding: max(28px, calc(env(safe-area-inset-top) + 12px)) 16px 0;
+    pointer-events: none;
+  }
+  header > * { pointer-events: auto; width: min(600px, 100%); }
+
+  /* --- search field --- */
+  .field {
+    position: relative;
+    display: flex; align-items: center;
+    height: 54px;
+    background: var(--surface);
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius);
+    transition: border-color .2s;
+  }
+  .field:focus-within { border-color: var(--hairline-strong); }
+  .field .icon {
+    flex: none; width: 48px; height: 100%;
+    display: grid; place-items: center; color: var(--muted);
+  }
+  .field .icon svg { width: 17px; height: 17px; }
+  .field .spinner {
+    width: 15px; height: 15px; border-radius: 50%;
+    border: 1.5px solid var(--hairline-strong); border-top-color: var(--text);
+    animation: spin .8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #q {
+    flex: 1; min-width: 0; height: 100%;
+    padding: 0 8px 0 0;
+    background: none; border: 0; outline: none;
+    color: var(--text);
+    font: 400 18px/1 var(--sans);
+    letter-spacing: -.01em;
+  }
+  #q::placeholder { color: var(--faint); }
+
+  #clear {
+    flex: none; height: 100%; padding: 0 14px 0 6px;
+    display: grid; place-items: center;
+    background: none; border: 0; cursor: pointer; color: var(--muted);
+  }
+  #clear kbd {
+    font: 500 11px/1 var(--sans); color: var(--muted);
+    border: 1px solid var(--hairline-strong); border-radius: 5px; padding: 4px 6px;
+    transition: color .15s, border-color .15s;
+  }
+  #clear:hover kbd { color: var(--text); border-color: var(--muted); }
+  #clear svg { width: 16px; height: 16px; display: none; }
+  @media (pointer: coarse) {
+    #clear { padding: 0 16px; }
+    #clear kbd { display: none; }
+    #clear svg { display: block; }
+  }
+
+  /* --- status, SQL, examples --- */
+  #status {
+    min-height: 18px; margin-top: 14px; padding: 0 4px;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px;
+    font-size: 13px; color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  #status:empty { display: none; }
+  #status[data-tone="error"] { color: var(--error); }
+  #status .tag {
+    font: 500 10px/1 var(--sans); letter-spacing: .06em;
+    color: var(--text);
+    border: 1px solid var(--hairline-strong); border-radius: 4px; padding: 3px 5px;
+  }
+  #status .link {
+    font: inherit; color: var(--text); background: none; border: 0; padding: 4px 0; cursor: pointer;
+    text-decoration: underline; text-decoration-color: var(--hairline-strong); text-underline-offset: 3px;
+  }
+  #status .link:hover { text-decoration-color: var(--text); }
+
+  #sql {
+    margin-top: 4px; padding: 0 4px;
+    font: 11px/1.6 var(--mono); color: var(--faint);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    cursor: pointer; transition: color .15s;
+  }
+  #sql:hover { color: var(--muted); }
+  #sql.expanded { white-space: pre-wrap; color: var(--muted); }
+
+  #examples {
+    margin-top: 16px; padding: 0 2px;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  }
+  #examples .try { font-size: 13px; color: var(--faint); margin: 0 6px 0 2px; }
+  .chip {
+    font: 400 13px/1 var(--sans); color: var(--muted);
+    background: rgba(255, 255, 255, .04);
+    border: 0; border-radius: 8px;
+    padding: 9px 11px; cursor: pointer;
+    transition: color .15s, background .15s;
+  }
+  .chip:hover { color: var(--text); background: rgba(255, 255, 255, .08); }
+
+  @media (max-width: 600px) {
+    header { padding-top: max(16px, calc(env(safe-area-inset-top) + 8px)); }
+    #q { font-size: 17px; }
+  }
+
+  /* --- sprites (unchanged) --- */
+  #stage {
+    position: absolute; inset: 0; overflow: hidden;  /* edge sprites mustn't widen the page on phones */
+    color: #fff; font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  .sprite {
+    position: absolute; left: 0; top: 0;
+    width: 44px;
+    transform-origin: 0 0;
+    transition: transform .8s cubic-bezier(.2,.9,.25,1.15), opacity .5s;
+    will-change: transform;
+    text-align: center;
+  }
+  .sprite img {
+    display: block; width: 44px; height: 58px; object-fit: contain;
+    filter: drop-shadow(0 2px 3px rgba(0,0,0,.5));
+    user-select: none; -webkit-user-drag: none;
+  }
+  .sprite .label {
+    font-size: 7px; line-height: 1.2; white-space: nowrap;
+    opacity: 0; transition: opacity .3s;
+    margin-left: -20px; margin-right: -20px;
+  }
+  .sprite .label b { display: block; font-size: 8px; }
+  .sprite.active .label { opacity: 1; }
+  body.searching .sprite:not(.active) { opacity: .35; }
+</style>
+</head>
+<body>
+<header>
+  <div class="field" id="field">
+    <span class="icon" aria-hidden="true">
+      <svg id="search-icon" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="7.75" cy="7.75" r="5.5"/><path d="M12 12l4 4"/></svg>
+      <span class="spinner" id="spinner" hidden></span>
+    </span>
+    <label for="q" class="sr-only">Search players</label>
+    <input id="q" type="text" placeholder="Search players, or ask a question"
+           autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
+           enterkeyhint="search" autofocus>
+    <button id="clear" type="button" aria-label="Clear search" hidden>
+      <kbd>esc</kbd>
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"/></svg>
+    </button>
+  </div>
+  <div id="status" aria-live="polite"></div>
+  <div id="sql" title="Show the full query" hidden></div>
+  <div id="examples">
+    <span class="try">Try</span>
+    <button class="chip" type="button">cheap in-form defenders</button>
+    <button class="chip" type="button">Spurs penalty takers</button>
+    <button class="chip" type="button">best xG per 90</button>
+    <button class="chip" type="button">differentials with easy fixtures</button>
+  </div>
+</header>
+
+<div id="stage"></div>
+
+<script>
+const SPRITE_W = 44, SPRITE_H = 58;
+const RESULT_SCALE_MAX = 2;
+const MAX_RESULTS = 10;
+const IS_TOUCH = matchMedia("(pointer: coarse)").matches;
+// API paths are relative to the page, so the app works at / or under a prefix like /fpl/.
+const API = location.pathname.replace(/\/?$/, "/") + "api";
+
+const stage = document.getElementById("stage");
+const field = document.getElementById("field");
+const input = document.getElementById("q");
+const clearBtn = document.getElementById("clear");
+const searchIcon = document.getElementById("search-icon");
+const spinner = document.getElementById("spinner");
+const statusEl = document.getElementById("status");
+const sqlEl = document.getElementById("sql");
+const examplesEl = document.getElementById("examples");
+sqlEl.addEventListener("click", () => sqlEl.classList.toggle("expanded"));
+
+let players = [];           // from /api/players
+const els = new Map();      // id -> sprite element
+const home = new Map();     // id -> {x, y} resting spot in the pile
+let activeIds = [];
+
+// Layout size. On phones this ignores height-only changes (the keyboard opening)
+// so the pile doesn't reshuffle every time the search box is tapped.
+const pageWidth = () => document.documentElement.clientWidth;
+let viewW = pageWidth(), viewH = window.innerHeight;
+
+// FPL kit icons: one per team, plus a separate goalkeeper kit ("_1"). 220px so they stay crisp when scaled up.
+const shirtUrl = p => `https://fantasy.premierleague.com/dist/img/shirts/standard/shirt_${p.team_code}${p.position === "GKP" ? "_1" : ""}-220.webp`;
+
+function place(el, x, y, scale = 1) {
+  el.style.transform = `translate(${x}px, ${y}px) scale(${scale})`;
+}
+
+// --- geometry -----------------------------------------------------------
+// Narrow screens get a shallower pile so there's room for results.
+const pileBand = () => Math.min(viewH * (viewW < 600 ? 0.24 : 0.32), 260);
+
+// Where matched players gather: below the status/SQL lines, above the pile.
+function resultsBox() {
+  const top = field.getBoundingClientRect().bottom + 64;
+  const bottom = viewH - pileBand() - 40;
+  return { top, bottom: Math.max(bottom, top + 120) };
+}
+
+// Scatter everyone into a pile along the bottom of the screen.
+function layoutPile() {
+  const w = viewW, h = viewH;
+  const bandHeight = pileBand();
+  for (const p of players) {
+    // Bias towards the bottom so it looks like a heap.
+    const depth = Math.sqrt(Math.random());
+    home.set(p.id, {
+      x: Math.random() * (w - SPRITE_W),
+      y: h - SPRITE_H - 8 - (1 - depth) * bandHeight,
+    });
+  }
+}
+
+// Pull the matched players into a centred grid.
+function layoutResults() {
+  const w = viewW;
+  const { top, bottom } = resultsBox();
+  const n = activeIds.length;
+
+  // Largest scale that fits all results in the available box.
+  let scale = RESULT_SCALE_MAX, cols, cellW, cellH;
+  for (; scale > 0.8; scale -= 0.1) {
+    cellW = (SPRITE_W + 24) * scale;
+    cellH = (SPRITE_H + 22) * scale;
+    cols = Math.max(1, Math.floor((w - 32) / cellW));
+    if (Math.ceil(n / cols) * cellH <= bottom - top) break;
+  }
+  cols = Math.min(cols, n);
+  const rows = Math.ceil(n / cols);
+  const gridTop = top + Math.max(0, (bottom - top - rows * cellH) / 2);
+
+  activeIds.forEach((id, i) => {
+    const row = Math.floor(i / cols), col = i % cols;
+    const inRow = Math.min(cols, n - row * cols);
+    const rowLeft = (w - inRow * cellW) / 2;
+    const x = rowLeft + col * cellW + (cellW - SPRITE_W * scale) / 2;
+    const y = gridTop + row * cellH;
+    const el = els.get(id);
+    el.style.transitionDelay = `${Math.min(i * 15, 400)}ms`;
+    el.style.zIndex = 5000 + i;
+    place(el, x, y, scale);
+  });
+}
+
+function render() {
+  const active = new Set(activeIds);
+  for (const p of players) {
+    const el = els.get(p.id);
+    const isActive = active.has(p.id);
+    el.classList.toggle("active", isActive);
+    if (!isActive) {
+      const { x, y } = home.get(p.id);
+      el.style.transitionDelay = "0ms";
+      el.style.zIndex = Math.round(y);
+      place(el, x, y);
+    }
+  }
+  document.body.classList.toggle("searching", activeIds.length > 0);
+  layoutResults();
+}
+
+const defaultDetail = p => `${p.team} · £${p.price}m`;
+
+function setDetails(stats) {
+  // stats: id -> value to show instead of the price, or empty to reset
+  for (const p of players) {
+    const span = els.get(p.id).querySelector(".label span");
+    span.textContent = stats.has(p.id) ? `${p.team} · ${formatStat(stats.get(p.id))}` : defaultDetail(p);
+  }
+}
+
+let statLabel = null;
+// 123456 -> "123,456", 0.8812 -> "0.88", 5.0 -> "5"
+const numberFormat = new Intl.NumberFormat("en-GB", { maximumFractionDigits: 2 });
+
+function formatStat(v) {
+  const num = typeof v === "number" ? numberFormat.format(v) : v;
+  if (statLabel === "£") return `£${num}m`;
+  return statLabel ? `${statLabel} ${num}` : `${num}`;
+}
+
+function makeSprite(p) {
+  const el = document.createElement("div");
+  el.className = "sprite";
+  el.title = `${p.first_name} ${p.second_name} · ${p.team} ${p.position} · £${p.price}m · ${p.total_points} pts`;
+  const img = document.createElement("img");
+  img.alt = p.web_name;
+  img.src = shirtUrl(p);
+  const label = document.createElement("div");
+  label.className = "label";
+  label.innerHTML = `<b></b><span></span>`;
+  label.querySelector("b").textContent = p.web_name;
+  label.querySelector("span").textContent = defaultDetail(p);
+  el.append(img, label);
+  return el;
+}
+
+// --- header state -------------------------------------------------------
+const escapeHtml = s => s.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+function setStatus(html, tone = "") {
+  statusEl.innerHTML = html;
+  statusEl.dataset.tone = tone;
+}
+
+function setBusy(on) {
+  searchIcon.style.display = on ? "none" : "";
+  spinner.hidden = !on;
+}
+
+function syncChrome() {
+  const hasText = input.value.trim().length > 0;
+  clearBtn.hidden = !input.value;
+  examplesEl.hidden = hasText || activeIds.length > 0;
+}
+
+// --- search -------------------------------------------------------------
+// Typing runs the instant name search. If no player names match, pausing
+// (or pressing Enter) asks the model to turn the question into SQL.
+const ASK_DELAY_MS = 700;
+let nameTimer, askTimer, requestSeq = 0;
+
+input.addEventListener("input", () => {
+  clearTimeout(nameTimer);
+  clearTimeout(askTimer);
+  syncChrome();
+  nameTimer = setTimeout(runNameSearch, 120);
+});
+
+input.addEventListener("keydown", e => {
+  if (e.key === "Enter") {
+    clearTimeout(nameTimer);
+    clearTimeout(askTimer);
+    // On phones, close the keyboard so the results are visible.
+    if (IS_TOUCH) input.blur();
+    runAsk();
+  }
+});
+
+function clearSearch() {
+  clearTimeout(nameTimer);
+  clearTimeout(askTimer);
+  requestSeq++;  // drop any search still in flight
+  setBusy(false);
+  input.value = "";
+  showResults([]);
+  input.focus();
+}
+
+// Esc clears from anywhere on the page and sends everyone back to the pile.
+document.addEventListener("keydown", e => { if (e.key === "Escape") clearSearch(); });
+clearBtn.addEventListener("click", clearSearch);
+
+examplesEl.addEventListener("click", e => {
+  const chip = e.target.closest(".chip");
+  if (!chip) return;
+  input.value = chip.textContent;
+  syncChrome();
+  runAsk();
+});
+
+statusEl.addEventListener("click", e => {
+  if (!e.target.closest("[data-ask]")) return;
+  if (IS_TOUCH) input.blur();
+  runAsk();
+});
+
+function showResults(ids, { stats = new Map(), sql = null, status = "", tone = "" } = {}) {
+  activeIds = ids.slice(0, MAX_RESULTS);
+  setDetails(stats);
+  setStatus(status, tone);
+  sqlEl.hidden = !sql;
+  sqlEl.textContent = sql || "";
+  sqlEl.classList.remove("expanded");
+  syncChrome();
+  render();
+}
+
+const plural = (n, word) => `${n} ${word}${n === 1 ? "" : word.endsWith("ch") ? "es" : "s"}`;
+
+async function runNameSearch() {
+  const q = input.value.trim();
+  const seq = ++requestSeq;
+  setBusy(false);
+  if (!q) return showResults([]);
+  const { ids } = await (await fetch(`${API}/search?q=${encodeURIComponent(q)}`)).json();
+  if (seq !== requestSeq) return;
+  if (ids.length) {
+    const count = ids.length > MAX_RESULTS
+      ? `Top ${MAX_RESULTS} of ${ids.length} name matches`
+      : plural(ids.length, "name match");
+    showResults(ids, {
+      status: `<span>${count}</span><button class="link" type="button" data-ask>Ask as a question instead</button>`,
+    });
+  } else {
+    setStatus("No name matches. Asking as a question…");
+    askTimer = setTimeout(runAsk, ASK_DELAY_MS);
+  }
+}
+
+async function runAsk() {
+  const q = input.value.trim();
+  if (!q) return;
+  const seq = ++requestSeq;
+  setBusy(true);
+  setStatus("Searching…");
+  try {
+    const res = await fetch(`${API}/ask?q=${encodeURIComponent(q)}`);
+    const data = await res.json().catch(() => ({}));
+    if (seq !== requestSeq) return;  // a newer search has started
+    if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Search failed. Try again, or rephrase it.");
+    statLabel = data.stat_label;
+    const stats = new Map();
+    data.ids.forEach((id, i) => { if (data.stats[i] != null) stats.set(id, data.stats[i]); });
+    const summary = data.ids.length
+      ? `<span>${plural(data.ids.length, "player")} · ${data.total_ms} ms</span>`
+      : `<span>No players fit that. Try rewording it.</span>`;
+    showResults(data.ids, { stats, sql: data.sql, status: `<span class="tag">AI</span>${summary}` });
+  } catch (err) {
+    if (seq === requestSeq) {
+      // fetch() itself rejects with a TypeError when the server can't be reached.
+      const message = err instanceof TypeError ? "Couldn't reach the server. Check your connection and try again." : err.message;
+      showResults([], { status: escapeHtml(message), tone: "error" });
+    }
+  } finally {
+    if (seq === requestSeq) setBusy(false);
+  }
+}
+
+// --- boot ---------------------------------------------------------------
+async function init() {
+  setStatus("Loading players…");
+  try {
+    players = await (await fetch(`${API}/players`)).json();
+  } catch {
+    setStatus("Couldn't load players. Check the server is running, then refresh.", "error");
+    return;
+  }
+  layoutPile();
+  for (const p of players) {
+    const el = makeSprite(p);
+    els.set(p.id, el);
+    stage.append(el);
+  }
+  // Drop everyone in from above for a bit of fun.
+  for (const p of players) place(els.get(p.id), home.get(p.id).x, -100);
+  requestAnimationFrame(() => requestAnimationFrame(render));
+  setStatus("");
+  syncChrome();
+  // ?q=haaland runs a name search, ?ask=cheap+defenders goes straight to the AI.
+  const params = new URLSearchParams(location.search);
+  if (params.get("ask")) { input.value = params.get("ask"); syncChrome(); setTimeout(runAsk, 600); }
+  else if (params.get("q")) { input.value = params.get("q"); syncChrome(); setTimeout(runNameSearch, 600); }
+}
+
+let resizeTimer;
+window.addEventListener("resize", () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    const w = pageWidth(), h = window.innerHeight;
+    if (w === viewW && (h === viewH || IS_TOUCH)) return;
+    viewW = w; viewH = h;
+    layoutPile();
+    render();
+  }, 150);
+});
+
+init();
+</script>
+</body>
+</html>
