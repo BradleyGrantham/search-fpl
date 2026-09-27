@@ -76,7 +76,11 @@ async def get_state(env) -> dict:
     if _state and time.time() - _state["loaded_at"] < RELOAD_AFTER_S:
         return _state
     buf = await env.FPL_DATA.get(SNAPSHOT_KEY, "arrayBuffer")
-    db = buf.to_bytes() if buf is not None else await refresh_snapshot(env)  # first ever run
+    if buf is None:
+        db = await refresh_snapshot(env)  # first ever run
+    else:
+        # KV hands back a memoryview (or a JS ArrayBuffer proxy, depending on the runtime).
+        db = buf.to_bytes() if hasattr(buf, "to_bytes") else bytes(buf)
     _state = load_state(db)
     return _state
 
