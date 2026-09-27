@@ -1,0 +1,30 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "fpl-api",
+  "main": "src/entry.py",
+  "compatibility_date": "2026-09-26",
+  "compatibility_flags": ["python_workers"],
+
+  // Rebuild the FPL snapshot every 6 hours (offset from the hour to avoid the rush).
+  "triggers": { "crons": ["17 */6 * * *"] },
+
+  // The FPL database snapshot (SQLite bytes, ~200KB) under the key "fpl.db".
+  "kv_namespaces": [{ "binding": "FPL_DATA", "id": "34e395f65a594f388c94bee3a9d61e6e" }],
+
+  // AI searches per visitor IP. Counters are per Cloudflare location and approximate.
+  "ratelimits": [{ "name": "ASK_LIMITER", "namespace_id": "1001", "simple": { "limit": 20, "period": 60 } }],
+
+  "vars": {
+    // Pages allowed to call this API from a browser.
+    "ALLOWED_ORIGINS": "https://bradleygrantham.com,https://www.bradleygrantham.com,http://localhost:3000",
+    // Approximate cap on AI searches per day across everyone (spend protection).
+    "ASK_DAILY_LIMIT": "2000",
+    // Set to "1" to include the generated SQL in /ask responses (debugging only).
+    "SHOW_SQL": ""
+  },
+  // Secret, set with: npx wrangler secret put CEREBRAS_API_KEY
+  //   CEREBRAS_API_KEY
+
+  // Keep request logs (every AI search is logged with its SQL and timings).
+  "observability": { "enabled": true }
+}
