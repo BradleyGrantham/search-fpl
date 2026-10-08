@@ -205,8 +205,12 @@ const SPRITE_W = 44, SPRITE_H = 58;
 const RESULT_SCALE_MAX = 2;
 const MAX_RESULTS = 10;
 const IS_TOUCH = matchMedia("(pointer: coarse)").matches;
-// API paths are relative to the page, so the app works at / or under a prefix like /fpl/.
-const API = location.pathname.replace(/\/?$/, "/") + "api";
+// Where the API lives: <meta name="fpl-api"> if the page sets one (e.g. the Cloudflare Worker),
+// otherwise next to the page (…/api), as when served by the FastAPI app at / or /fpl/.
+const API_META = document.querySelector('meta[name="fpl-api"]');
+const API = API_META
+  ? API_META.content.replace(/\/$/, "")
+  : location.pathname.replace(/\/index\.html$/, "/").replace(/\/?$/, "/") + "api";
 
 const stage = document.getElementById("stage");
 const field = document.getElementById("field");
