@@ -1,4 +1,8 @@
-"""Natural-language search: question -> SQL (gpt-oss-120b on Cerebras) -> player ids."""
+"""Natural-language search: question -> SQL -> player ids.
+
+The SQL is written by gpt-oss-120b on Cerebras (default), or by Claude Haiku 5.5 when
+LLM_PROVIDER=anthropic (see app/claude_sql.py).
+"""
 
 import os
 import re
@@ -8,8 +12,10 @@ from pathlib import Path
 
 from openai import OpenAI
 
+from app import claude_sql
 from app.ingest import DB_PATH
 
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "cerebras").lower()  # "cerebras" | "anthropic"
 MODEL = "gpt-oss-120b"
 MAX_ROWS = 10
 QUERY_TIMEOUT_S = 2.0
@@ -96,16 +102,21 @@ def _get_client() -> OpenAI:
 
 
 def warm_up() -> None:
-    """Build the prompt and open the HTTPS connection so the first search isn't slow."""
+    """Build the prompt and get the model ready so the first search isn't slow."""
     global _system_prompt
     _system_prompt = build_system_prompt()
-    _get_client().models.list()
+    if LLM_PROVIDER == "anthropic":
+        claude_sql.warm_up(_system_prompt)  # writes the prompt cache
+    else:
+        _get_client().models.list()  # opens the HTTPS connection
 
 
 def refresh_prompt() -> None:
     """Rebuild the prompt after a data refresh (the current gameweek may have moved on)."""
     global _system_prompt
-    _system_prompt = build_system_prompt()
+    old, _system_prompt = _system_prompt, build_system_prompt()
+    if LLM_PROVIDER == "anthropic" and _system_prompt != old:
+        claude_sql.warm_up(_system_prompt)  # new prompt text means a new cache entry
 
 
 def _read_only_connection() -> sqlite3.Connection:
@@ -172,10 +183,14 @@ def _clean_sql(text: str) -> str:
     return text.rstrip(";").strip()
 
 
-def _generate_sql(question: str, failed_sql: str | None = None, error: str | None = None) -> str:
+def _generate_sql(question: str, failed_sql: str | None = None, error: str | None = None):
+    """Returns (sql, usage); usage is only reported for Claude."""
     global _system_prompt
     if _system_prompt is None:
         _system_prompt = build_system_prompt()
+    if LLM_PROVIDER == "anthropic":
+        text, usage = claude_sql.generate_sql(_system_prompt, question, failed_sql, error)
+        return _clean_sql(text), usage
     messages = [
         {"role": "system", "content": _system_prompt},
         {"role": "user", "content": question},
@@ -192,7 +207,7 @@ def _generate_sql(question: str, failed_sql: str | None = None, error: str | Non
         max_completion_tokens=1024,
         temperature=0,
     )
-    return _clean_sql(response.choices[0].message.content or "")
+    return _clean_sql(response.choices[0].message.content or ""), None
 
 
 def _run_sql(sql: str) -> tuple[list[int], list[float | None]]:
@@ -215,7 +230,7 @@ def _run_sql(sql: str) -> tuple[list[int], list[float | None]]:
 def ask(question: str) -> dict:
     """Answer a natural-language question. Retries once, feeding the SQL error back to the model."""
     t0 = time.perf_counter()
-    sql = _generate_sql(question)
+    sql, usage = _generate_sql(question)
     model_ms = (time.perf_counter() - t0) * 1000
     retried = False
     try:
@@ -223,7 +238,9 @@ def ask(question: str) -> dict:
     except (sqlite3.Error, ValueError) as err:
         retried = True
         t1 = time.perf_counter()
-        sql = _generate_sql(question, failed_sql=sql, error=str(err))
+        sql, retry_usage = _generate_sql(question, failed_sql=sql, error=str(err))
+        if usage and retry_usage:
+            usage = {k: usage[k] + retry_usage[k] for k in usage}
         model_ms += (time.perf_counter() - t1) * 1000
         ids, stats = _run_sql(sql)
     return {
@@ -232,6 +249,8 @@ def ask(question: str) -> dict:
         "stat_label": stat_label(sql),
         "sql": sql,
         "retried": retried,
+        "model": claude_sql.MODEL if LLM_PROVIDER == "anthropic" else MODEL,
+        "usage": usage,  # Claude only: input / cache_read / cache_write / output tokens
         "model_ms": round(model_ms),
         "total_ms": round((time.perf_counter() - t0) * 1000),
     }

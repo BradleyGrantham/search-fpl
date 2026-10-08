@@ -136,7 +136,7 @@ async def ask(q: str, request: Request):
     SEARCH_LOG.parent.mkdir(exist_ok=True)
     with SEARCH_LOG.open("a") as f:
         entry = {"ts": time.time(), "q": q, "n": len(result["ids"])}
-        entry.update({k: result[k] for k in ("sql", "model_ms", "total_ms", "retried")})
+        entry.update({k: result[k] for k in ("sql", "model", "usage", "model_ms", "total_ms", "retried")})
         f.write(json.dumps(entry) + "\n")
     log.info("ask %r -> %d players, model %dms, total %dms",
              q, len(result["ids"]), result["model_ms"], result["total_ms"])
