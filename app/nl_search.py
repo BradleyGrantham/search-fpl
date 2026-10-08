@@ -1,7 +1,7 @@
 """Natural-language search: question -> SQL -> player ids.
 
-The SQL is written by gpt-oss-120b on Cerebras (default), or by Claude Haiku 5.5 when
-LLM_PROVIDER=anthropic (see app/claude_sql.py).
+The SQL is written by Claude Haiku 5.5 (default, see app/claude_sql.py), or by gpt-oss-120b on
+Cerebras when LLM_PROVIDER=cerebras.
 """
 
 import os
@@ -15,7 +15,7 @@ from openai import OpenAI
 from app import claude_sql
 from app.ingest import DB_PATH
 
-LLM_PROVIDER = os.getenv("LLM_PROVIDER", "cerebras").lower()  # "cerebras" | "anthropic"
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "anthropic").lower()  # "anthropic" | "cerebras"
 MODEL = "gpt-oss-120b"
 MAX_ROWS = 10
 QUERY_TIMEOUT_S = 2.0
