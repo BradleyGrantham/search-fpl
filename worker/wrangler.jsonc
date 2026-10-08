@@ -16,7 +16,7 @@
 
   "vars": {
     // Pages allowed to call this API from a browser.
-    "ALLOWED_ORIGINS": "https://bradleygrantham.com,https://www.bradleygrantham.com,http://localhost:3000",
+    "ALLOWED_ORIGINS": "https://bradleygrantham.com,https://www.bradleygrantham.com,https://bradleygrantham-com.gjnzgp6rfm.workers.dev,http://localhost:3000",
     // Approximate cap on AI searches per day across everyone (spend protection).
     "ASK_DAILY_LIMIT": "2000",
     // Set to "1" to include the generated SQL in /ask responses (debugging only).
