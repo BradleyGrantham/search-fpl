@@ -2,7 +2,7 @@
 
 GET /players          every player (for the sprites)
 GET /search?q=        instant name search
-GET /ask?q=           natural-language search: gpt-oss-120b on Cerebras writes SQL, run read-only
+GET /ask?q=           natural-language search: Claude Haiku 5.5 writes SQL, run read-only
 GET /health
 
 A cron trigger rebuilds the FPL snapshot into KV every 6 hours; each Worker instance keeps
@@ -16,18 +16,17 @@ import traceback
 from datetime import datetime, timezone
 from urllib.parse import parse_qs, urlparse
 
-from js import AbortSignal, Object, fetch
+from js import Object, fetch
 from pyodide.ffi import to_js
 from workers import Response, WorkerEntrypoint
 
 import fpl_data
+import llm
 import nl
 
 MAX_QUERY_CHARS = 120  # matches maxlength on the search box
 SNAPSHOT_KEY = "fpl.db"
 RELOAD_AFTER_S = 600  # re-read KV at most every 10 minutes per instance
-CEREBRAS_URL = "https://api.cerebras.ai/v1/chat/completions"
-CEREBRAS_TIMEOUT_MS = 8000
 GENERIC_ERROR = "Search failed. Try again, or rephrase it."
 
 # Per-instance cache of the loaded snapshot.
@@ -99,41 +98,10 @@ def search_players(players: list[dict], query: str) -> list[int]:
     return [p["id"] for p in hits]
 
 
-async def generate_sql(env, prompt: str, question: str, failed_sql=None, error=None) -> str:
-    messages = [{"role": "system", "content": prompt}, {"role": "user", "content": question}]
-    if failed_sql:
-        messages += [
-            {"role": "assistant", "content": failed_sql},
-            {"role": "user", "content": f"That failed with: {error}\nFix it. Output only SQL."},
-        ]
-    body = json.dumps({
-        "model": nl.MODEL,
-        "messages": messages,
-        "reasoning_effort": "low",
-        "max_completion_tokens": 1024,
-        "temperature": 0,
-    })
-    for attempt in range(2):  # one retry for Cerebras hiccups (5xx, 429, network)
-        try:
-            resp = await fetch(CEREBRAS_URL, js_obj({
-                "method": "POST",
-                "headers": js_obj({
-                    "Authorization": f"Bearer {env.CEREBRAS_API_KEY}",
-                    "Content-Type": "application/json",
-                }),
-                "body": body,
-                "signal": AbortSignal.timeout(CEREBRAS_TIMEOUT_MS),
-            }))
-        except Exception as err:  # timeout or network error
-            if attempt == 0:
-                continue
-            raise RuntimeError(f"Cerebras request failed: {err}") from err
-        text = await resp.text()
-        if resp.ok:
-            return nl.clean_sql(json.loads(text)["choices"][0]["message"]["content"] or "")
-        if attempt == 0 and (resp.status == 429 or resp.status >= 500):
-            continue
-        raise RuntimeError(f"Cerebras {resp.status}: {text[:300]}")
+async def generate_sql(env, prompt: str, question: str, failed_sql=None, error=None):
+    """Returns (sql, usage)."""
+    text, usage = await llm.generate_sql(str(env.ANTHROPIC_API_KEY), prompt, question, failed_sql, error)
+    return nl.clean_sql(text), usage
 
 
 async def within_daily_cap(env) -> bool:
@@ -163,18 +131,19 @@ async def ask(env, request, question: str):
 
     state = await get_state(env)
     t0 = time.time()
-    sql = await generate_sql(env, state["prompt"], question)
+    sql, usage = await generate_sql(env, state["prompt"], question)
     retried = False
     try:
         ids, stats = nl.run_sql(state["con"], sql)
     except (sqlite3.Error, ValueError) as err:
         retried = True
-        sql = await generate_sql(env, state["prompt"], question, failed_sql=sql, error=str(err))
+        sql, retry_usage = await generate_sql(env, state["prompt"], question, failed_sql=sql, error=str(err))
+        usage = {k: usage[k] + retry_usage[k] for k in usage}
         ids, stats = nl.run_sql(state["con"], sql)
     total_ms = round((time.time() - t0) * 1000)  # wall time across the model call(s)
 
     print(json.dumps({"event": "ask", "q": question, "n": len(ids), "sql": sql,
-                      "total_ms": total_ms, "retried": retried}))
+                      "total_ms": total_ms, "retried": retried, "model": llm.MODEL, "usage": usage}))
     result = {"query": question, "ids": ids, "stats": stats, "stat_label": nl.stat_label(sql),
               "retried": retried, "total_ms": total_ms}
     if getattr(env, "SHOW_SQL", "") in ("1", "true", "yes"):
@@ -235,3 +204,10 @@ class Default(WorkerEntrypoint):
         global _state
         db = await refresh_snapshot(self.env)
         _state = load_state(db)
+        # The prompt includes the current gameweek, so a refresh can change it: write the new
+        # cache entry now rather than on the first visitor's search. Never fail the refresh over it.
+        try:
+            usage = await llm.warm_up(str(self.env.ANTHROPIC_API_KEY), _state["prompt"])
+            print(json.dumps({"event": "cache_warm", "usage": usage}))
+        except Exception:
+            print(json.dumps({"event": "cache_warm_failed", "trace": traceback.format_exc()}))

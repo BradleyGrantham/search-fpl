@@ -22,8 +22,8 @@
     // Set to "1" to include the generated SQL in /ask responses (debugging only).
     "SHOW_SQL": ""
   },
-  // Secret, set with: npx wrangler secret put CEREBRAS_API_KEY
-  //   CEREBRAS_API_KEY
+  // Secret, set with: npx wrangler secret put ANTHROPIC_API_KEY
+  //   ANTHROPIC_API_KEY
 
   // Keep request logs (every AI search is logged with its SQL and timings).
   "observability": { "enabled": true }

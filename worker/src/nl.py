@@ -6,7 +6,6 @@ Prompt text and stat labels match the server version (app/nl_search.py).
 import re
 import sqlite3
 
-MODEL = "gpt-oss-120b"
 MAX_ROWS = 10
 # Stop any query after this much SQLite work. Real searches use at most ~250k operations;
 # an operation budget (unlike a time limit) works on Workers, where the clock is frozen
