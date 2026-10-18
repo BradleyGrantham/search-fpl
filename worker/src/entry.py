@@ -28,6 +28,7 @@ MAX_QUERY_CHARS = 120  # matches maxlength on the search box
 SNAPSHOT_KEY = "fpl.db"
 RELOAD_AFTER_S = 600  # re-read KV at most every 10 minutes per instance
 GENERIC_ERROR = "Search failed. Try again, or rephrase it."
+SITE_PREFIX = "/fpl/api"  # matches the route in wrangler.jsonc
 
 # Per-instance cache of the loaded snapshot.
 _state: dict | None = None
@@ -179,6 +180,10 @@ class Default(WorkerEntrypoint):
 
         url = urlparse(request.url)
         path = url.path.rstrip("/") or "/"
+        # On bradleygrantham.com the API is routed at /fpl/api/* (same origin as the page);
+        # on workers.dev it's at the root.
+        if path.startswith(SITE_PREFIX + "/"):
+            path = path[len(SITE_PREFIX):]
         q = parse_qs(url.query).get("q", [""])[0]
         try:
             if path == "/health":

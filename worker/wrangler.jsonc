@@ -5,6 +5,12 @@
   "compatibility_date": "2026-09-26",
   "compatibility_flags": ["python_workers"],
 
+  // Served at bradleygrantham.com/fpl/api/* so the page calls it on its own origin. This route runs
+  // in front of the site Worker's custom domain. Keep workers.dev too, for the preview copy of the
+  // site and local dev (both call it cross-origin, hence ALLOWED_ORIGINS).
+  "routes": [{ "pattern": "bradleygrantham.com/fpl/api/*", "zone_name": "bradleygrantham.com" }],
+  "workers_dev": true,
+
   // Rebuild the FPL snapshot every 6 hours (offset from the hour to avoid the rush).
   "triggers": { "crons": ["17 */6 * * *"] },
 
