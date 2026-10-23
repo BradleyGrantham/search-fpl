@@ -57,6 +57,9 @@ players who actually play (minutes >= 90 so far) and rank by the quality asked f
 'Premium' means price >= 9.5.
 Per-90 stats are meaningless on tiny samples: whenever you filter or rank by a *_per_90 column, require minutes >= 270.
 If the question is just a player's name, match it with name_search.
+Rows are always players, never teams: id must be a players.id. For questions about teams (e.g. 'worst defence',
+'best attack'), work out the team stat, then return players from those teams.
+A team's goals conceded/scored come from finished fixtures (home_score/away_score), not from summing player stats.
 If the question cannot be answered from this data, output: SELECT id FROM players WHERE 0
 """
 
@@ -72,6 +75,9 @@ SELECT id, form AS stat FROM players WHERE position = 'MID' AND price <= 5.5 AND
 
 Q: forwards with easy fixtures over the next 3 gameweeks
 SELECT p.id, ROUND(AVG(tf.difficulty), 2) AS stat FROM players p JOIN team_fixtures tf ON tf.team_id = p.team_id WHERE p.position = 'FWD' AND p.minutes >= 90 AND p.status NOT IN ('u','n') AND tf.gameweek BETWEEN {next_gw} AND {next_gw} + 2 GROUP BY p.id ORDER BY stat ASC, p.total_points DESC LIMIT 10
+
+Q: worst defence
+SELECT p.id, t.conceded AS stat FROM players p JOIN (SELECT team_id, ROUND(AVG(conceded), 2) AS conceded FROM (SELECT home_team_id AS team_id, away_score AS conceded FROM fixtures WHERE finished = 1 UNION ALL SELECT away_team_id, home_score FROM fixtures WHERE finished = 1) GROUP BY team_id) t ON t.team_id = p.team_id WHERE p.position IN ('GKP','DEF') AND p.minutes >= 90 AND p.status NOT IN ('u','n') ORDER BY stat DESC, p.total_points DESC LIMIT 10
 """
 
 
