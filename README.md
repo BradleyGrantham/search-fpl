@@ -4,28 +4,34 @@ Type a player's name, or ask a question in plain English, and the matching playe
 
 Live at https://bradleygrantham.com/fpl/.
 
-## How it runs
+## How it works
 
+The API is a Cloudflare Python Worker (`fpl-api`):
+
+- Every 6 hours it pulls the FPL data into a small SQLite database and stores it in Workers KV.
+- Name search runs in memory on that data.
+- AI search asks Claude Haiku to turn the question into one SQLite `SELECT`. That query runs on a read-only, in-memory copy of the database, with an authorizer that only allows reads and a cap on how long a query can run and how many rows it returns.
+
+On bradleygrantham.com the API is routed at `/fpl/api/*`, so the page calls it on its own origin.
+
+## Files
+
+- `src/entry.py`: the Worker. Routes (`/players`, `/search`, `/ask`, `/health`), CORS, rate limits and the 6-hourly refresh.
+- `src/fpl_data.py`: builds the SQLite database from the FPL API's JSON.
+- `src/nl.py`: the prompt (rules, data dictionary, examples) and safe execution of the model's SQL.
+- `src/llm.py`: the Claude call, with prompt caching.
 - `static/index.html`: the page. Typing does name search; if no names match, pausing (or pressing Enter) asks the AI.
-- `worker/`: the live API, a Cloudflare Python Worker (`fpl-api`). It rebuilds an SQLite snapshot of the FPL data every 6 hours into KV, does name search in memory, and turns questions into SQL with Claude Haiku. Routed at `bradleygrantham.com/fpl/api/*`.
-  ```bash
-  cd worker
-  npx wrangler secret put ANTHROPIC_API_KEY   # once
-  make dev      # http://localhost:8787
-  make deploy
-  ```
+- `wrangler.jsonc`: Worker config (route, cron, KV, rate limits, allowed origins).
 
-## Local FastAPI version
+## Running it
 
-The original version of the API, handy for working on the prompt.
+Needs [uv](https://docs.astral.sh/uv/) and Node (for Wrangler).
 
 ```bash
-echo "ANTHROPIC_API_KEY=..." > .env   # once (or LLM_PROVIDER=cerebras + CEREBRAS_API_KEY)
-uv run uvicorn app.main:app --reload
+echo "ANTHROPIC_API_KEY=sk-ant-..." > .dev.vars   # once, for local dev
+make dev       # http://localhost:8787; GET /cdn-cgi/handler/scheduled builds the data
+make deploy    # set the key first: npx wrangler secret put ANTHROPIC_API_KEY
+make logs
 ```
 
-Open http://localhost:8000. URL shortcuts: `/?q=haaland` (name search), `/?ask=cheap+in-form+defenders` (AI search).
-
-- `app/ingest.py`: pulls FPL data into `fpl.db` (SQLite). Runs automatically if the db is missing; refresh with `uv run python -m app.ingest`.
-- `app/nl_search.py`: question -> SQL (Claude Haiku by default, or gpt-oss-120b on Cerebras), run on a read-only, SELECT-only connection. The prompt (rules, data dictionary, examples) lives here.
-- `app/main.py`: FastAPI. `/api/search` is the instant name search, `/api/ask` is the AI search. Every AI search is logged to `logs/searches.jsonl` with its SQL and timings.
+To use the page against your local API, set `<meta name="fpl-api">` in `static/index.html` to `http://localhost:8787`.

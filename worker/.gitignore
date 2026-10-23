@@ -1,6 +1,0 @@
-.venv/
-.venv-workers/
-python_modules/
-node_modules/
-.wrangler/
-.dev.vars

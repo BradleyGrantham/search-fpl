@@ -1,27 +1,14 @@
-"""Natural-language search: question -> SQL -> player ids.
+"""Natural-language search: the prompt, and safe execution of the model's SQL."""
 
-The SQL is written by Claude Haiku 5.5 (default, see app/claude_sql.py), or by gpt-oss-120b on
-Cerebras when LLM_PROVIDER=cerebras.
-"""
-
-import os
 import re
 import sqlite3
-import time
-from pathlib import Path
 
-from openai import OpenAI
-
-from app import claude_sql
-from app.ingest import DB_PATH
-
-LLM_PROVIDER = os.getenv("LLM_PROVIDER", "anthropic").lower()  # "anthropic" | "cerebras"
-MODEL = "gpt-oss-120b"
 MAX_ROWS = 10
-QUERY_TIMEOUT_S = 2.0
-
-_client: OpenAI | None = None
-_system_prompt: str | None = None
+# Stop any query after this much SQLite work. Real searches use at most ~250k operations;
+# an operation budget (unlike a time limit) works on Workers, where the clock is frozen
+# while code is running.
+MAX_SQLITE_OPS = 5_000_000
+_OPS_PER_TICK = 10_000
 
 DATA_DICTIONARY = """\
 players: one row per FPL player, current season to date.
@@ -88,69 +75,6 @@ SELECT p.id, ROUND(AVG(tf.difficulty), 2) AS stat FROM players p JOIN team_fixtu
 """
 
 
-def _get_client() -> OpenAI:
-    global _client
-    if _client is None:
-        # Fail fast: a search box is useless after a few seconds (OpenAI's default is 10 min, 2 retries).
-        _client = OpenAI(
-            base_url="https://api.cerebras.ai/v1",
-            api_key=os.environ["CEREBRAS_API_KEY"],
-            timeout=5.0,
-            max_retries=1,
-        )
-    return _client
-
-
-def warm_up() -> None:
-    """Build the prompt and get the model ready so the first search isn't slow."""
-    global _system_prompt
-    _system_prompt = build_system_prompt()
-    if LLM_PROVIDER == "anthropic":
-        claude_sql.warm_up(_system_prompt)  # writes the prompt cache
-    else:
-        _get_client().models.list()  # opens the HTTPS connection
-
-
-def refresh_prompt() -> None:
-    """Rebuild the prompt after a data refresh (the current gameweek may have moved on)."""
-    global _system_prompt
-    old, _system_prompt = _system_prompt, build_system_prompt()
-    if LLM_PROVIDER == "anthropic" and _system_prompt != old:
-        claude_sql.warm_up(_system_prompt)  # new prompt text means a new cache entry
-
-
-def _read_only_connection() -> sqlite3.Connection:
-    con = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True, check_same_thread=False)
-
-    # Belt and braces on top of mode=ro: only allow reads.
-    allowed = {sqlite3.SQLITE_SELECT, sqlite3.SQLITE_READ, sqlite3.SQLITE_FUNCTION}
-
-    def authorizer(action, *_):
-        return sqlite3.SQLITE_OK if action in allowed else sqlite3.SQLITE_DENY
-
-    con.set_authorizer(authorizer)
-    return con
-
-
-def build_system_prompt() -> str:
-    con = sqlite3.connect(DB_PATH)
-    teams = con.execute("SELECT short_name, name FROM teams ORDER BY name").fetchall()
-    row = con.execute("SELECT id FROM gameweeks WHERE is_next = 1").fetchone()
-    con.close()
-    next_gw = row[0] if row else 38
-    team_list = ", ".join(f"{short}={name}" for short, name in teams)
-    return "\n".join([
-        RULES.format(max_rows=MAX_ROWS),
-        f"The next gameweek is {next_gw}; the current one is {next_gw - 1}.",
-        f"Teams (short_name=name): {team_list}",
-        "",
-        "Schema:",
-        DATA_DICTIONARY,
-        "Examples:",
-        EXAMPLES.format(next_gw=next_gw),
-    ])
-
-
 STAT_LABELS = {
     "price": "£", "form": "form", "total_points": "pts", "event_points": "GW pts",
     "points_per_game": "ppg", "ep_next": "xPts", "selected_by_percent": "own%",
@@ -177,80 +101,53 @@ def stat_label(sql: str) -> str | None:
     return STAT_LABELS[known.pop()] if len(known) == 1 else None
 
 
-def _clean_sql(text: str) -> str:
+def clean_sql(text: str) -> str:
     text = text.strip()
     text = re.sub(r"^```(?:sql)?\s*|\s*```$", "", text, flags=re.IGNORECASE).strip()
     return text.rstrip(";").strip()
 
 
-def _generate_sql(question: str, failed_sql: str | None = None, error: str | None = None):
-    """Returns (sql, usage); usage is only reported for Claude."""
-    global _system_prompt
-    if _system_prompt is None:
-        _system_prompt = build_system_prompt()
-    if LLM_PROVIDER == "anthropic":
-        text, usage = claude_sql.generate_sql(_system_prompt, question, failed_sql, error)
-        return _clean_sql(text), usage
-    messages = [
-        {"role": "system", "content": _system_prompt},
-        {"role": "user", "content": question},
-    ]
-    if failed_sql:
-        messages += [
-            {"role": "assistant", "content": failed_sql},
-            {"role": "user", "content": f"That failed with: {error}\nFix it. Output only SQL."},
-        ]
-    response = _get_client().chat.completions.create(
-        model=MODEL,
-        messages=messages,
-        reasoning_effort="low",
-        max_completion_tokens=1024,
-        temperature=0,
-    )
-    return _clean_sql(response.choices[0].message.content or ""), None
+def build_system_prompt(con: sqlite3.Connection) -> str:
+    teams = con.execute("SELECT short_name, name FROM teams ORDER BY name").fetchall()
+    row = con.execute("SELECT id FROM gameweeks WHERE is_next = 1").fetchone()
+    next_gw = row[0] if row else 38
+    team_list = ", ".join(f"{short}={name}" for short, name in teams)
+    return "\n".join([
+        RULES.format(max_rows=MAX_ROWS),
+        f"The next gameweek is {next_gw}; the current one is {next_gw - 1}.",
+        f"Teams (short_name=name): {team_list}",
+        "",
+        "Schema:",
+        DATA_DICTIONARY,
+        "Examples:",
+        EXAMPLES.format(next_gw=next_gw),
+    ])
 
 
-def _run_sql(sql: str) -> tuple[list[int], list[float | None]]:
+def open_read_only(db: bytes) -> sqlite3.Connection:
+    """Load the snapshot into memory, then only ever allow reads on it."""
+    con = sqlite3.connect(":memory:")
+    con.deserialize(db)
+    allowed = {sqlite3.SQLITE_SELECT, sqlite3.SQLITE_READ, sqlite3.SQLITE_FUNCTION}
+    con.set_authorizer(lambda action, *_: sqlite3.SQLITE_OK if action in allowed else sqlite3.SQLITE_DENY)
+    return con
+
+
+def run_sql(con: sqlite3.Connection, sql: str) -> tuple[list[int], list]:
     if not re.match(r"^\s*(SELECT|WITH)\b", sql, re.IGNORECASE):
         raise ValueError("Only SELECT queries are allowed")
-    con = _read_only_connection()
-    deadline = time.monotonic() + QUERY_TIMEOUT_S
-    con.set_progress_handler(lambda: int(time.monotonic() > deadline), 10_000)
+    ticks = 0
+
+    def budget():
+        nonlocal ticks
+        ticks += 1
+        return int(ticks * _OPS_PER_TICK > MAX_SQLITE_OPS)  # non-zero aborts the query
+
+    con.set_progress_handler(budget, _OPS_PER_TICK)
     try:
         cur = con.execute(sql)
         rows = cur.fetchmany(MAX_ROWS)
-        has_stat = cur.description and len(cur.description) > 1
+        has_stat = cur.description is not None and len(cur.description) > 1
     finally:
-        con.close()
-    ids = [int(r[0]) for r in rows]
-    stats = [r[1] if has_stat else None for r in rows]
-    return ids, stats
-
-
-def ask(question: str) -> dict:
-    """Answer a natural-language question. Retries once, feeding the SQL error back to the model."""
-    t0 = time.perf_counter()
-    sql, usage = _generate_sql(question)
-    model_ms = (time.perf_counter() - t0) * 1000
-    retried = False
-    try:
-        ids, stats = _run_sql(sql)
-    except (sqlite3.Error, ValueError) as err:
-        retried = True
-        t1 = time.perf_counter()
-        sql, retry_usage = _generate_sql(question, failed_sql=sql, error=str(err))
-        if usage and retry_usage:
-            usage = {k: usage[k] + retry_usage[k] for k in usage}
-        model_ms += (time.perf_counter() - t1) * 1000
-        ids, stats = _run_sql(sql)
-    return {
-        "ids": ids,
-        "stats": stats,
-        "stat_label": stat_label(sql),
-        "sql": sql,
-        "retried": retried,
-        "model": claude_sql.MODEL if LLM_PROVIDER == "anthropic" else MODEL,
-        "usage": usage,  # Claude only: input / cache_read / cache_write / output tokens
-        "model_ms": round(model_ms),
-        "total_ms": round((time.perf_counter() - t0) * 1000),
-    }
+        con.set_progress_handler(None, 0)
+    return [int(r[0]) for r in rows], [r[1] if has_stat else None for r in rows]

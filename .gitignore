@@ -1,5 +1,15 @@
+# Python / uv
 .venv/
+.venv-workers/
+python_modules/
 __pycache__/
+
+# Wrangler
+node_modules/
+.wrangler/
+.dev.vars
+
+# Local files
 .env
 *.db
 logs/

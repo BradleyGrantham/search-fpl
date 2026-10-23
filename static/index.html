@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0e0e10">
+<!-- Source: static/index.html in the fpl-search repo, copied to bradleygrantham.com/public/fpl/. -->
+<meta name="fpl-api" content="https://fpl-api.gjnzgp6rfm.workers.dev">
 <title>FPL Search</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -205,12 +207,12 @@ const SPRITE_W = 44, SPRITE_H = 58;
 const RESULT_SCALE_MAX = 2;
 const MAX_RESULTS = 10;
 const IS_TOUCH = matchMedia("(pointer: coarse)").matches;
-// Where the API lives: <meta name="fpl-api"> if the page sets one (e.g. the Cloudflare Worker),
-// otherwise next to the page (…/api), as when served by the FastAPI app at / or /fpl/.
-const API_META = document.querySelector('meta[name="fpl-api"]');
-const API = API_META
-  ? API_META.content.replace(/\/$/, "")
-  : location.pathname.replace(/\/index\.html$/, "/").replace(/\/?$/, "/") + "api";
+// Where the API lives: on bradleygrantham.com, /fpl/api on the same origin (a route to the fpl-api
+// Worker). Anywhere else, the URL in <meta name="fpl-api"> (point it at http://localhost:8787 to
+// use `make dev`).
+const API = location.hostname === "bradleygrantham.com"
+  ? "/fpl/api"
+  : document.querySelector('meta[name="fpl-api"]').content.replace(/\/$/, "");
 
 const stage = document.getElementById("stage");
 const field = document.getElementById("field");

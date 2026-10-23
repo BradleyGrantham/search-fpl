@@ -1,18 +1,19 @@
-"""Pull FPL data into a local SQLite database.
+"""Build the FPL SQLite database from the FPL API's JSON.
 
-Run manually to refresh:  uv run python -m app.ingest
+Returns the database as bytes so it can be stored in KV and loaded into memory by each Worker
+instance.
 """
 
 import sqlite3
 import unicodedata
-from pathlib import Path
 
-import httpx
-
-DB_PATH = Path(__file__).parent.parent / "fpl.db"
 BOOTSTRAP_URL = "https://fantasy.premierleague.com/api/bootstrap-static/"
 FIXTURES_URL = "https://fantasy.premierleague.com/api/fixtures/"
 POSITIONS = {1: "GKP", 2: "DEF", 3: "MID", 4: "FWD"}
+PUBLIC_COLUMNS = [
+    "id", "code", "web_name", "first_name", "second_name", "team", "team_code",
+    "position", "price", "total_points",
+]
 
 SCHEMA = """
 DROP VIEW IF EXISTS team_fixtures;
@@ -122,18 +123,15 @@ def normalise(text: str) -> str:
     return "".join(c for c in decomposed if not unicodedata.combining(c)).lower().strip()
 
 
+
 def _num(value):
     return None if value is None or value == "" else float(value)
 
 
-def ingest(db_path: Path = DB_PATH) -> None:
-    bootstrap = httpx.get(BOOTSTRAP_URL, timeout=30).json()
-    fixtures = httpx.get(FIXTURES_URL, timeout=30).json()
-    teams = {t["id"]: t for t in bootstrap["teams"]}
 
-    tmp_path = db_path.with_suffix(".tmp")
-    tmp_path.unlink(missing_ok=True)
-    con = sqlite3.connect(tmp_path)
+def build_db(bootstrap: dict, fixtures: list) -> bytes:
+    teams = {t["id"]: t for t in bootstrap["teams"]}
+    con = sqlite3.connect(":memory:")
     con.executescript(SCHEMA)
 
     con.executemany(
@@ -223,14 +221,7 @@ def ingest(db_path: Path = DB_PATH) -> None:
             for e in bootstrap["events"]
         ],
     )
-
     con.commit()
+    data = con.serialize()
     con.close()
-    tmp_path.replace(db_path)  # atomic swap so the app never sees a half-written db
-
-
-if __name__ == "__main__":
-    ingest()
-    con = sqlite3.connect(DB_PATH)
-    for table in ("teams", "players", "fixtures", "gameweeks"):
-        print(f"{table}: {con.execute(f'SELECT COUNT(*) FROM {table}').fetchone()[0]} rows")
+    return data

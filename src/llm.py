@@ -1,4 +1,4 @@
-"""Question -> SQL with Claude Haiku 5.5, built around prompt caching (mirrors app/claude_sql.py).
+"""Question -> SQL with Claude Haiku 5.5, built around prompt caching.
 
 The system prompt (~2.1K tokens) is the same for every search, so it is cached with a 1-hour
 TTL; each search pays full price only for the question. The cache lives on Anthropic's side
