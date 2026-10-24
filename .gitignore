@@ -16,3 +16,6 @@ logs/
 .idea/
 *.tmp
 .DS_Store
+
+# Benchmark output (timings, token usage); bench/ground_truth.jsonl is kept
+bench/results/

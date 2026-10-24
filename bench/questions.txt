@@ -1,0 +1,139 @@
+# One question per line. Blank lines and lines starting with # are ignored.
+# Everyday questions first, then a spread covering the prompt's rules.
+
+# --- common ---
+spurs penalty takers
+best value defenders
+who has the most xG
+arsenal players under 6m
+players with highest xg
+players with lowest xg
+players with most points
+goalkeepers with most points
+midfielders with most xg/90
+midfielders with most xa/90
+
+# --- team / position / price filters ---
+liverpool midfielders
+chelsea defenders under 5m
+man city forwards
+cheap goalkeepers
+cheap defenders
+budget forwards
+premium midfielders
+premium forwards under 11m
+newcastle players over 7m
+villa defenders
+brighton midfielders under 6.5
+everton goalkeepers
+forwards between 6 and 8 million
+defenders under 4.5
+most expensive players
+
+# --- form / points / value ---
+in form forwards
+in-form midfielders under 7m
+best form players
+who scored the most points last gameweek
+top scorers this season
+most assists
+best points per game midfielders
+best value forwards
+points per million defenders
+highest expected points next gameweek
+most bonus points
+most clean sheets
+goalkeepers with the most saves
+defenders with most goals
+
+# --- underlying stats ---
+best xa
+highest xgi per 90 forwards
+best xGI midfielders
+defenders with highest xG
+players overperforming their xG
+underperforming xG forwards
+lowest xgc goalkeepers
+defensive contribution leaders
+best defensive contribution per 90 defenders
+highest ict index
+most bps
+
+# --- fixtures ---
+easy fixtures next 3 gameweeks
+defenders with easy fixtures
+midfielders with good fixtures next 5 gameweeks
+teams with the hardest fixtures
+goalkeepers with easy fixtures next gameweek
+players playing at home next gameweek
+forwards with the easiest fixture next week
+
+# --- availability / news ---
+injured players
+injured arsenal players
+doubtful players
+suspended players
+players with a yellow card risk
+players with red cards
+who is 50% to play
+injury doubts in my midfield
+
+# --- ownership / transfers ---
+differentials
+differential midfielders under 7m
+most owned players
+most transferred in this week
+most transferred out
+players rising in price
+biggest price drops
+template players
+
+# --- set pieces ---
+penalty takers
+corner takers
+free kick takers
+arsenal set piece takers
+first choice penalty takers under 7m
+
+# --- names ---
+haaland
+salah
+saka
+palmer
+bruno fernandes
+watkins
+son
+isak
+
+# --- age / misc ---
+youngest players
+oldest goalkeepers
+players under 21
+players with most minutes
+players who have started every game
+players with zero minutes
+penalties missed
+
+# --- fuzzy / chatty / multi-condition ---
+who should i buy
+who should i captain
+best enabler defenders
+cheap midfielders who get bonus
+nailed on budget defenders
+forwards with high xg but low ownership
+defenders who score goals and keep clean sheets
+midfielders under 6 with 3+ goals
+attacking full backs
+players with a double gameweek
+
+# --- typos / slang ---
+haalnd
+spurs defs
+mids under 5.5
+gks with most cs
+liverpol forwards
+
+# --- unanswerable / off-topic ---
+what is the weather today
+who will win the league
+write me a poem
