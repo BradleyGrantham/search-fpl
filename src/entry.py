@@ -60,7 +60,7 @@ def load_state(db: bytes) -> dict:
     con = nl.open_read_only(db)
     con.row_factory = sqlite3.Row
     players = [dict(r) for r in con.execute(
-        f"SELECT {', '.join(fpl_data.PUBLIC_COLUMNS)}, name_search FROM players")]
+        f"SELECT {', '.join(fpl_data.PUBLIC_COLUMNS)}, name_search FROM {nl.SOURCE_PLAYERS}")]
     con.row_factory = None
     return {
         "con": con,
@@ -105,6 +105,14 @@ async def generate_sql(env, prompt: str, question: str, failed_sql=None, error=N
     return nl.clean_sql(text), usage
 
 
+def run_retry(con, sql: str):
+    """Runs the second attempt. If that is prose again ("I can only help with FPL..."), there is no
+    answer to give: no players, rather than an error."""
+    if not nl.is_select(sql):
+        return [], [], None
+    return nl.run_sql(con, sql)
+
+
 async def within_daily_cap(env) -> bool:
     """Approximate global cap on AI searches per day (KV is eventually consistent)."""
     limit = int(getattr(env, "ASK_DAILY_LIMIT", "2000") or 2000)
@@ -135,17 +143,17 @@ async def ask(env, request, question: str):
     sql, usage = await generate_sql(env, state["prompt"], question)
     retried = False
     try:
-        ids, stats = nl.run_sql(state["con"], sql)
-    except (sqlite3.Error, ValueError) as err:
+        ids, stats, label = nl.run_sql(state["con"], sql)
+    except (sqlite3.Error, ValueError) as err:  # bad SQL, or prose instead of SQL
         retried = True
         sql, retry_usage = await generate_sql(env, state["prompt"], question, failed_sql=sql, error=str(err))
         usage = {k: usage[k] + retry_usage[k] for k in usage}
-        ids, stats = nl.run_sql(state["con"], sql)
+        ids, stats, label = run_retry(state["con"], sql)
     total_ms = round((time.time() - t0) * 1000)  # wall time across the model call(s)
 
     print(json.dumps({"event": "ask", "q": question, "n": len(ids), "sql": sql,
                       "total_ms": total_ms, "retried": retried, "model": llm.MODEL, "usage": usage}))
-    result = {"query": question, "ids": ids, "stats": stats, "stat_label": nl.stat_label(sql),
+    result = {"query": question, "ids": ids, "stats": stats, "stat_label": label,
               "retried": retried, "total_ms": total_ms}
     if getattr(env, "SHOW_SQL", "") in ("1", "true", "yes"):
         result["sql"] = sql

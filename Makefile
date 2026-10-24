@@ -9,6 +9,6 @@ deploy:
 	uv run pywrangler deploy
 logs:
 	npx wrangler tail fpl-api
-bench:   ## time /ask over bench/questions.txt (needs ANTHROPIC_API_KEY in .env)
-	uv run python bench/run.py --reps 5 --label baseline
-	uv run python bench/report.py bench/results/baseline.jsonl --write-ground-truth
+bench:   ## time the Worker's /ask code against the old prompt (needs ANTHROPIC_API_KEY in .env)
+	uv run python bench/run.py --reps 5 --label worker --variants baseline,worker
+	uv run python bench/report.py bench/results/worker.jsonl

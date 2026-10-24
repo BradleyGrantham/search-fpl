@@ -133,6 +133,12 @@ mids under 5.5
 gks with most cs
 liverpol forwards
 
+# --- teams (answered with their players) ---
+worst defence
+best attack
+teams that score the most
+defenders from the best defence
+
 # --- unanswerable / off-topic ---
 what is the weather today
 who will win the league
