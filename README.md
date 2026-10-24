@@ -36,4 +36,6 @@ make deploy    # set the key first: npx wrangler secret put ANTHROPIC_API_KEY
 make logs
 ```
 
+Pushes to `main` deploy automatically (`.github/workflows/deploy.yml`, using the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repo secrets). `make deploy` still works for a manual deploy.
+
 To use the page against your local API, set `<meta name="fpl-api">` in `static/index.html` to `http://localhost:8787`.
